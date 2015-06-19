@@ -87,12 +87,12 @@ public class MainActivity extends Activity implements OnClickListener, PeerListL
 		mManager.discoverPeers(mChannel, new WifiP2pManager.ActionListener() {
 		    @Override
 		    public void onSuccess() {
-		    	
+		    	Toast.makeText(MainActivity.this, "Inizio ricerca...", Toast.LENGTH_SHORT).show();
 		    }
 
 		    @Override
 		    public void onFailure(int reasonCode) {
-		    	
+		    	Toast.makeText(MainActivity.this, "Ricerca fallita!", Toast.LENGTH_SHORT).show();
 		    }
 		});
 		getDeviceName();
