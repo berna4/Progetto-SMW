@@ -29,7 +29,7 @@ public class MainActivity extends Activity implements OnClickListener, PeerListL
 	private Channel mChannel;
 	private BroadcastReceiver mReceiver;
 	private IntentFilter mIntentFilter;
-    private List peers = new ArrayList();
+    private List<WifiP2pDevice> peers = new ArrayList<WifiP2pDevice>();
     private ArrayList<String> peersName = new ArrayList<String>();
     	
     @Override
