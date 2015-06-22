@@ -1,14 +1,47 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="horizontal" >
-      <EditText android:id="@+id/edit_message"
-        android:layout_width="wrap_content"
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" 
+		android:id="@+id/linearlayout1" >
+        <Button
+            android:id="@+id/searcher"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/button_send" />
+
+        <Button
+            android:id="@+id/connecter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/button_connect"
+            android:visibility="invisible" />
+
+        <Button
+            android:id="@+id/disconnecter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/button_disconnect"
+            android:visibility="invisible" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@string/edit_message" />
-      <Button android:id="@+id/searcher"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/button_send" />
-</LinearLayout>
+        android:layout_below="@+id/linearlayout1" >
+
+        <ListView
+            android:id="@+id/list"
+            android:layout_width="match_parent"
+            android:layout_height="380dp"
+            android:layout_alignParentLeft="true"
+            android:visibility="invisible" >
+        </ListView>
+    </LinearLayout>
+"
+
+</RelativeLayout>

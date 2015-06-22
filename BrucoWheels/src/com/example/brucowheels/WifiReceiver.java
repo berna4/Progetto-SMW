@@ -26,7 +26,6 @@ public class WifiReceiver extends BroadcastReceiver {
         if (WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION.equals(action)) { // check if wifi is enabled/disabled
         	int state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1);
             if (state == WifiP2pManager.WIFI_P2P_STATE_ENABLED) {
-            	System.out.println("receiver funzia wifi attivo");
             	//mActivity.setIsWifiP2pEnabled(true);
             } else {
                 //mActivity.setIsWifiP2pEnabled(false);
@@ -36,7 +35,6 @@ public class WifiReceiver extends BroadcastReceiver {
         	// request available peers from the wifi p2p manager. This is an
             // asynchronous call and the calling activity is notified with a
             // callback on PeerListListener.onPeersAvailable()
-        	System.out.println("receiver funzia dentro");
             if (mManager != null) {
                 mManager.requestPeers(mChannel, mActivity);
                 

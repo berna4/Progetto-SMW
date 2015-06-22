@@ -1,17 +1,18 @@
 package com.example.brucowheels;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.wifi.WpsInfo;
+import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
 import android.net.wifi.p2p.WifiP2pDeviceList;
 import android.net.wifi.p2p.WifiP2pManager;
+import android.net.wifi.p2p.WifiP2pManager.ActionListener;
 import android.net.wifi.p2p.WifiP2pManager.Channel;
 import android.net.wifi.p2p.WifiP2pManager.PeerListListener;
 import android.os.Bundle;
@@ -19,36 +20,30 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnClickListener;
+import android.widget.AdapterView;
+import android.widget.AdapterView.OnItemClickListener;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckedTextView;
+import android.widget.ListView;
 import android.widget.Toast;
 
 
-public class MainActivity extends Activity implements OnClickListener, PeerListListener {
+public class MainActivity extends Activity implements OnItemClickListener, PeerListListener {
 
 	private WifiP2pManager mManager;
 	private Channel mChannel;
 	private BroadcastReceiver mReceiver;
 	private IntentFilter mIntentFilter;
     private List<WifiP2pDevice> peers = new ArrayList<WifiP2pDevice>();
+    private List<WifiP2pDevice> peersConnect = new ArrayList<WifiP2pDevice>();
     private ArrayList<String> peersName = new ArrayList<String>();
-    	
-    @Override
-    public void onPeersAvailable(WifiP2pDeviceList peerList) {
+    private ListView list;
+    private Button bSearch;
+    private Button bConnect;
+    private Button bDisconnect;
+    private int nSelectedDevices = 0;
 
-        // Out with the old, in with the new.
-        peers.clear();
-        peers.addAll(peerList.getDeviceList());
-
-        // If an AdapterView is backed by this data, notify it
-        // of the change.  For instance, if you have a ListView of available
-        // peers, trigger an update.
-        //((ListAdapter) getListAdapter()).notifyDataSetChanged();
-        if (peers.size() == 0) {
-        	System.out.println("i nomi sono: ");
-        	Toast.makeText(getApplicationContext(), "Non c'è nu gaz", Toast.LENGTH_LONG).show();
-        }
-    }
-	
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
@@ -62,8 +57,37 @@ public class MainActivity extends Activity implements OnClickListener, PeerListL
 	    mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
 	    mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
 	    
-	    Button b = (Button) this.findViewById(R.id.searcher);
-		b.setOnClickListener(this);
+	    bSearch = (Button) this.findViewById(R.id.searcher);
+		bSearch.setOnClickListener(new OnClickListener() {
+			public void onClick (View v) {
+				list.setVisibility(ListView.INVISIBLE);
+				bConnect.setVisibility(View.INVISIBLE);
+				bDisconnect.setVisibility(View.INVISIBLE);
+				nSelectedDevices = 0;
+				peersConnect.clear();
+				searchDevices();		
+			}
+		});
+		bConnect = (Button) this.findViewById(R.id.connecter);
+		bConnect.setOnClickListener(new OnClickListener() {
+			public void onClick (View v) {
+				bDisconnect.setVisibility(View.VISIBLE);
+				connectDevices();		
+			}
+		});
+		bDisconnect = (Button) this.findViewById(R.id.disconnecter);
+		bDisconnect.setOnClickListener(new OnClickListener() {
+			public void onClick (View v) {
+				disconnectDevices();
+				bDisconnect.setVisibility(View.INVISIBLE);
+			}
+		});
+		list = (ListView) this.findViewById(R.id.list);
+		list.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
+		 //--	text filtering
+		list.setTextFilterEnabled(true);
+		 
+		 
 	}
 	
 	/* register the broadcast receiver with the intent values to be matched */
@@ -79,9 +103,42 @@ public class MainActivity extends Activity implements OnClickListener, PeerListL
 	    unregisterReceiver(mReceiver);
 	}
 	
-	public void onClick (View v) {
-		searchDevices();		
+	
+	
+	public void onItemClick(AdapterView<?> parent, View v, int position, long id) {
+		CheckedTextView item = (CheckedTextView) v;
+		if(item.isChecked()) {
+			nSelectedDevices++;
+			peersConnect.add(peers.get(position));
+		}
+		else {
+			nSelectedDevices--;
+			peersConnect.remove(peers.get(position));
+		}
+		if(nSelectedDevices == 1)
+			bConnect.setVisibility(View.VISIBLE);
+		else if(nSelectedDevices == 0)
+			bConnect.setVisibility(View.INVISIBLE);
 	}
+	
+    @Override
+    public void onPeersAvailable(WifiP2pDeviceList peerList) {
+
+        // Out with the old, in with the new.
+        peers.clear();
+        peers.addAll(peerList.getDeviceList());
+        getDeviceName();
+        list.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_checked, peersName));
+        list.setOnItemClickListener(this);
+		list.setVisibility(ListView.VISIBLE);
+        // If an AdapterView is backed by this data, notify it
+        // of the change.  For instance, if you have a ListView of available
+        // peers, trigger an update.
+        //((ListAdapter) getListAdapter()).notifyDataSetChanged();
+        if (peers.size() == 0) {
+        	
+        }
+    }
 	
 	private void searchDevices() {
 		mManager.discoverPeers(mChannel, new WifiP2pManager.ActionListener() {
@@ -95,19 +152,59 @@ public class MainActivity extends Activity implements OnClickListener, PeerListL
 		    	Toast.makeText(MainActivity.this, "Ricerca fallita!", Toast.LENGTH_SHORT).show();
 		    }
 		});
-		getDeviceName();
-		Intent intent = new Intent(this, ListDevices.class);
-		intent.putStringArrayListExtra("deviceList", peersName);
-		//startActivity(intent);
+		
 	}
 	
+	private void connectDevices() {
+		for(int i = 0; i < peersConnect.size(); i++) {
+			Toast.makeText(MainActivity.this, peersConnect.get(i).deviceName, Toast.LENGTH_SHORT).show();
+		    
+	        // Picking the first device found on the network.
+	        WifiP2pDevice device = peersConnect.get(i);
+
+	        WifiP2pConfig config = new WifiP2pConfig();
+	        config.deviceAddress = device.deviceAddress;
+	        config.wps.setup = WpsInfo.PBC;
+
+	        mManager.connect(mChannel, config, new ActionListener() {
+
+	            @Override
+	            public void onSuccess() {
+	                // WiFiDirectBroadcastReceiver will notify us. Ignore for now.
+	            	Toast.makeText(MainActivity.this, "Connected.", Toast.LENGTH_SHORT).show();
+	            }
+
+	            @Override
+	            public void onFailure(int reason) {
+	                Toast.makeText(MainActivity.this, "Connect failed. Retry.", Toast.LENGTH_SHORT).show();
+	            }
+	        });
+		}
+	}
+	
+    public void disconnectDevices() {
+        mManager.removeGroup(mChannel, new ActionListener() {
+
+            @Override
+            public void onFailure(int reasonCode) {
+
+            }
+
+            @Override
+            public void onSuccess() {
+            	Toast.makeText(MainActivity.this, "Disconnected.", Toast.LENGTH_SHORT).show();
+            }
+
+        });
+    }
+	
 	private void getDeviceName() {
-		Iterator<WifiP2pDevice> it = peers.iterator();
-		while(it.hasNext()) {
-			peersName.add(it.next().deviceName);
-			
-			System.out.println(it.next().deviceName);
-		}	
+		int i = 0;
+		peersName.clear();
+		while(i < peers.size()) {
+			peersName.add(peers.get(i).deviceName);
+			i++;
+		}
 	}
 
 	@Override
