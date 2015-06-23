@@ -1,5 +1,6 @@
 package com.example.brucowheels;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,9 +12,11 @@ import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
 import android.net.wifi.p2p.WifiP2pDeviceList;
+import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pManager;
 import android.net.wifi.p2p.WifiP2pManager.ActionListener;
 import android.net.wifi.p2p.WifiP2pManager.Channel;
+import android.net.wifi.p2p.WifiP2pManager.GroupInfoListener;
 import android.net.wifi.p2p.WifiP2pManager.PeerListListener;
 import android.os.Bundle;
 import android.view.Menu;
@@ -50,12 +53,30 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 		setContentView(R.layout.activity_main);
 	    mManager = (WifiP2pManager) getSystemService(Context.WIFI_P2P_SERVICE);
 	    mChannel = mManager.initialize(this, getMainLooper(), null);
-	    mReceiver = new WifiReceiver(mManager, mChannel, this);
+	    
+	    try {
+	        Class<?> wifiManager = Class
+	                .forName("android.net.wifi.p2p.WifiP2pManager");
+
+	        Method method = wifiManager
+	                .getMethod(
+	                        "enableP2p",
+	                        new Class[] { android.net.wifi.p2p.WifiP2pManager.Channel.class });
+
+	        method.invoke(mManager, mChannel);
+
+	    } catch (Exception e) {
+	        // TODO Auto-generated catch block
+	        e.printStackTrace();
+	    }
+	    
+	    
 	    mIntentFilter = new IntentFilter();
 	    mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION);
 	    mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION);
 	    mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
 	    mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
+	    mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_DISCOVERY_CHANGED_ACTION);
 	    
 	    bSearch = (Button) this.findViewById(R.id.searcher);
 		bSearch.setOnClickListener(new OnClickListener() {
@@ -65,23 +86,32 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 				bDisconnect.setVisibility(View.INVISIBLE);
 				nSelectedDevices = 0;
 				peersConnect.clear();
+				peers.clear();
+				peersName.clear();
 				searchDevices();		
 			}
 		});
+		
 		bConnect = (Button) this.findViewById(R.id.connecter);
 		bConnect.setOnClickListener(new OnClickListener() {
 			public void onClick (View v) {
 				bDisconnect.setVisibility(View.VISIBLE);
 				connectDevices();		
+				bConnect.setVisibility(View.INVISIBLE);
+				nSelectedDevices = 0;
+				peersConnect.clear();
 			}
 		});
+		
 		bDisconnect = (Button) this.findViewById(R.id.disconnecter);
 		bDisconnect.setOnClickListener(new OnClickListener() {
 			public void onClick (View v) {
 				disconnectDevices();
+				peersConnect.clear();
 				bDisconnect.setVisibility(View.INVISIBLE);
 			}
 		});
+		
 		list = (ListView) this.findViewById(R.id.list);
 		list.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
 		 //--	text filtering
@@ -94,13 +124,21 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 	@Override
 	protected void onResume() {
 	    super.onResume();
+	    mReceiver = new WifiReceiver(mManager, mChannel, this);
 	    registerReceiver(mReceiver, mIntentFilter);
 	}
+	
 	/* unregister the broadcast receiver */
 	@Override
 	protected void onPause() {
 	    super.onPause();
 	    unregisterReceiver(mReceiver);
+	}
+	
+	@Override
+	protected void onDestroy() {
+	    super.onDestroy();
+	    finish();
 	}
 	
 	
@@ -136,7 +174,7 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
         // peers, trigger an update.
         //((ListAdapter) getListAdapter()).notifyDataSetChanged();
         if (peers.size() == 0) {
-        	
+        	return;
         }
     }
 	
@@ -144,12 +182,12 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 		mManager.discoverPeers(mChannel, new WifiP2pManager.ActionListener() {
 		    @Override
 		    public void onSuccess() {
-		    	Toast.makeText(MainActivity.this, "Inizio ricerca...", Toast.LENGTH_SHORT).show();
+		    	//Toast.makeText(MainActivity.this, "Inizio ricerca...", Toast.LENGTH_SHORT).show();
 		    }
 
 		    @Override
 		    public void onFailure(int reasonCode) {
-		    	Toast.makeText(MainActivity.this, "Ricerca fallita!", Toast.LENGTH_SHORT).show();
+		    	//Toast.makeText(MainActivity.this, "Ricerca fallita!", Toast.LENGTH_SHORT).show();
 		    }
 		});
 		
@@ -157,7 +195,6 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 	
 	private void connectDevices() {
 		for(int i = 0; i < peersConnect.size(); i++) {
-			Toast.makeText(MainActivity.this, peersConnect.get(i).deviceName, Toast.LENGTH_SHORT).show();
 		    
 	        // Picking the first device found on the network.
 	        WifiP2pDevice device = peersConnect.get(i);
@@ -171,7 +208,7 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 	            @Override
 	            public void onSuccess() {
 	                // WiFiDirectBroadcastReceiver will notify us. Ignore for now.
-	            	Toast.makeText(MainActivity.this, "Connected.", Toast.LENGTH_SHORT).show();
+	            	Toast.makeText(MainActivity.this, "Connection requested...", Toast.LENGTH_SHORT).show();
 	            }
 
 	            @Override
@@ -182,21 +219,29 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 		}
 	}
 	
-    public void disconnectDevices() {
-        mManager.removeGroup(mChannel, new ActionListener() {
+	public void disconnectDevices() {
+	    if (mManager != null && mChannel != null) {
+	        mManager.requestGroupInfo(mChannel, new GroupInfoListener() {
+	            @Override
+	            public void onGroupInfoAvailable(WifiP2pGroup group) {
+	                if (group != null && mManager != null && mChannel != null && group.isGroupOwner()) {
+	                    mManager.removeGroup(mChannel, new ActionListener() {
+	                    	@Override
+	                        public void onSuccess() {
+	                            
+	                        }
 
-            @Override
-            public void onFailure(int reasonCode) {
-
-            }
-
-            @Override
-            public void onSuccess() {
-            	Toast.makeText(MainActivity.this, "Disconnected.", Toast.LENGTH_SHORT).show();
-            }
-
-        });
-    }
+	                        @Override
+	                        public void onFailure(int reason) {
+	                         
+	                        }
+	                    });
+	                }
+	            }
+	        });
+	    }
+	}
+	
 	
 	private void getDeviceName() {
 		int i = 0;
