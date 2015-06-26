@@ -3,6 +3,7 @@ package com.example.brucowheels;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.net.NetworkInfo;
 import android.net.wifi.p2p.WifiP2pManager;
 import android.net.wifi.p2p.WifiP2pManager.Channel;
 import android.widget.Toast;
@@ -44,15 +45,33 @@ public class WifiReceiver extends BroadcastReceiver {
             }
         } else if (WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION.equals(action)) {
             // Respond to new connection or disconnections
-        	System.out.println("Connection changed");
+        	if (mManager == null) {
+                return;
+            }
+
+            NetworkInfo networkInfo = (NetworkInfo) intent
+                    .getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO);
+
+            if (networkInfo.isConnected()) {
+
+                // We are connected with the other device, request connection
+                // info to find group owner IP
+
+                mManager.requestConnectionInfo(mChannel, mActivity);
+                Toast.makeText(mActivity, "You are connected!", Toast.LENGTH_SHORT).show();
+            }
+            else {
+            	Toast.makeText(mActivity, "Perché cazzo rifiuti??", Toast.LENGTH_SHORT).show(); // in teoria se rifiuti
+            }
+            	
         } else if (WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION.equals(action)) {
             // Respond to this device's wifi state changing
         	System.out.println("This device changed");
         }
-        else if (WifiP2pManager.WIFI_P2P_DISCOVERY_CHANGED_ACTION.equals(action)) {
+        /*else if (WifiP2pManager.WIFI_P2P_DISCOVERY_CHANGED_ACTION.equals(action)) {
             // Respond to this device's wifi state changing
         	System.out.println("Search peers");
-        }
+        }*/
     }
 
 }
