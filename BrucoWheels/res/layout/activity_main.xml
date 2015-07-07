@@ -38,9 +38,8 @@
             android:id="@+id/list"
             android:layout_width="match_parent"
             android:layout_height="380dp"
-            android:layout_alignParentLeft="true"
-            android:visibility="invisible" >
-        </ListView>
+            android:layout_alignParentLeft="true" />
+            <!--  android:visibility="invisible" --> 
     </LinearLayout>
 "
 
