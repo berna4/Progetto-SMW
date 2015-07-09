@@ -2,7 +2,12 @@ package com.example.brucowheels;
 
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -19,8 +24,12 @@ import android.net.wifi.p2p.WifiP2pManager;
 import android.net.wifi.p2p.WifiP2pManager.ActionListener;
 import android.net.wifi.p2p.WifiP2pManager.Channel;
 import android.net.wifi.p2p.WifiP2pManager.ConnectionInfoListener;
+import android.net.wifi.p2p.WifiP2pManager.DnsSdServiceResponseListener;
+import android.net.wifi.p2p.WifiP2pManager.DnsSdTxtRecordListener;
 import android.net.wifi.p2p.WifiP2pManager.GroupInfoListener;
 import android.net.wifi.p2p.WifiP2pManager.PeerListListener;
+import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceInfo;
+import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceRequest;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -37,13 +46,17 @@ import android.widget.Toast;
 
 public class MainActivity extends Activity implements OnItemClickListener, PeerListListener, ConnectionInfoListener {
 
+	private final int SERVER_PORT = 8988;
+	private final HashMap<String, String> buddies = new HashMap<String, String>();
 	private WifiP2pManager mManager;
 	private Channel mChannel;
 	private BroadcastReceiver mReceiver;
 	private IntentFilter mIntentFilter;
+	private WifiP2pDnsSdServiceRequest serviceRequest;
+	private WifiP2pDnsSdServiceInfo serviceInfo; // info sul service locale
     private List<WifiP2pDevice> peers = new ArrayList<WifiP2pDevice>(); // lista con i peers scoperti
     private List<WifiP2pDevice> peersConnect = new ArrayList<WifiP2pDevice>(); // lista dei peers selezionati per la connessione
-    private ArrayList<String> peersName = new ArrayList<String>(); // lista con i nomi dei peers scoperti
+    private List<String> peersName = new ArrayList<String>(); // lista con i nomi dei peers scoperti
     private ListView list;
     private Button bSearch;
     private Button bConnect;
@@ -75,7 +88,9 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 				peersConnect.clear();
 				peers.clear();
 				peersName.clear();
-				searchDevices();	
+				list.setAdapter(new ArrayAdapter<String>(MainActivity.this, android.R.layout.simple_list_item_checked, peersName));
+				//searchDevices();	
+				discoverService();
 				list.setVisibility(ListView.VISIBLE);
 			}
 		});
@@ -103,7 +118,9 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 		list = (ListView) this.findViewById(R.id.list);
 		list.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
 		list.setOnItemClickListener(this);
-		 
+		
+		
+		//list.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_checked, peersName));
 	}
 	
 	// registro il broadcast receiver
@@ -112,6 +129,7 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 	    super.onResume();
 	    mReceiver = new WifiReceiver(mManager, mChannel, this);
 	    registerReceiver(mReceiver, mIntentFilter);
+	    startRegistration();
 	}
 	
 	// stacco il broadcast receiver
@@ -121,10 +139,20 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 	    unregisterReceiver(mReceiver);
 	}
 	
+	// arresta la ricerca e la visibilità del dispositivo
+		@Override
+		protected void onStop() {
+		    super.onStop();
+		    unregisterLocalService();
+		    stopSearchServices();
+		    stopSearchDevices();
+		}
+	
 	// arresta la ricerca, la visibilità del dispositivo e uccide l'app
 	@Override
 	protected void onDestroy() {
 	    super.onDestroy();
+	    stopSearchServices();
 	    stopSearchDevices();
 	    finish();
 	}
@@ -156,12 +184,12 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
     public void onPeersAvailable(WifiP2pDeviceList peerList) {
 
         // elimino i vecchi peers e aggiungo i nuovi
-        peers.clear();
+        /*peers.clear();
         peers.addAll(peerList.getDeviceList());
         if(peers.size() != 0) {
         	getDeviceName();
         	list.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_checked, peersName));
-        }
+        }*/
     }
     
     // metodo richiamato da mManager.requestConnectionInfo() per distinguere tra owner e client
@@ -221,6 +249,42 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 		});
 	}
 	
+	// blocca la ricerca di altri servizi
+	private void stopSearchServices() {
+		mManager.clearLocalServices(mChannel, new WifiP2pManager.ActionListener() {
+		    @Override
+		    public void onSuccess() {
+		    }
+
+		    @Override
+		    public void onFailure(int reasonCode) {
+		    }
+		});
+		mManager.clearServiceRequests(mChannel, new WifiP2pManager.ActionListener() {
+		    @Override
+		    public void onSuccess() {
+		    }
+
+		    @Override
+		    public void onFailure(int reasonCode) {
+		    }
+		});
+		peersName.clear();
+	}
+		
+	// cancella il servizio locale
+	private void unregisterLocalService() {
+		mManager.removeLocalService(mChannel, serviceInfo, new WifiP2pManager.ActionListener() {
+		    @Override
+		    public void onSuccess() {
+		    }
+
+		    @Override
+		    public void onFailure(int reasonCode) {
+		    }
+		});
+	}	
+	
 	private void connectDevices() {
 		for(int i = 0; i < peersConnect.size(); i++) {
 		    
@@ -271,13 +335,14 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 	}
 	
 	// creo una lista con i nomi dei dispositivi trovati per visualizzarla
-	private void getDeviceName() {
-		int i = 0;
-		peersName.clear();
-		while(i < peers.size()) {
-			peersName.add(peers.get(i).deviceName);
-			i++;
+	private void addPeer(WifiP2pDevice device) {
+		if(!peers.contains(device)) {
+			peers.add(device);
+			peersName.add(device.deviceName);
+			list.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_checked, peersName));
 		}
+		else
+			System.out.println(device.deviceName + " già presente");
 	}
 
 	@Override
@@ -297,6 +362,91 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 			return true;
 		}
 		return super.onOptionsItemSelected(item);
+	}
+	
+	private void startRegistration() {
+        //  crea un record con alcune info da passare
+        Map<String, String> record = new HashMap<String, String>();
+        //record.put("listenport", String.valueOf(SERVER_PORT));
+
+        // Service information.  Pass it an instance name, service type
+        // _protocol._transportlayer , and the map containing
+        // information other devices will want once they connect to this one.
+        serviceInfo = WifiP2pDnsSdServiceInfo.newInstance("brucoWheels", "_presence._tcp", record);
+
+        // Add the local service, sending the service info, network channel,
+        // and listener that will be used to indicate success or failure of
+        // the request.
+        mManager.addLocalService(mChannel, serviceInfo, new ActionListener() {
+            @Override
+            public void onSuccess() {
+                // Command successful! Code isn't necessarily needed here,
+                // Unless you want to update the UI or add logging statements.
+            }
+
+            @Override
+            public void onFailure(int arg0) {
+                // Command failed.  Check for P2P_UNSUPPORTED, ERROR, or BUSY
+            }
+        });
+    }
+	
+	private void discoverService() {
+	    DnsSdTxtRecordListener txtListener = new DnsSdTxtRecordListener() {
+	        @Override
+	        /* Callback includes:
+	         * fullDomain: full domain name: e.g "printer._ipp._tcp.local."
+	         * record: TXT record dta as a map of key/value pairs.
+	         * device: The device running the advertised service.
+	         */
+
+	        public void onDnsSdTxtRecordAvailable(String fullDomain, Map record, WifiP2pDevice device) {
+	        	// fai qualcosa con i dati del record
+                System.out.println(fullDomain);
+            }
+	    };
+        DnsSdServiceResponseListener servListener = new DnsSdServiceResponseListener() {
+            @Override
+            public void onDnsSdServiceAvailable(String instanceName, String registrationType, WifiP2pDevice resourceType) {
+
+            	System.out.println(instanceName);
+            	System.out.println(registrationType);
+                // Add to the custom adapter defined specifically for showing wifi devices.
+                if(instanceName.equals("brucoWheels"))
+                	addPeer(resourceType);
+        
+            }
+        };
+
+        mManager.setDnsSdResponseListeners(mChannel, servListener, txtListener);
+        
+        serviceRequest = WifiP2pDnsSdServiceRequest.newInstance();
+        mManager.addServiceRequest(mChannel, serviceRequest, new ActionListener() {
+            @Override
+            public void onSuccess() {
+                // Success!
+            }
+
+            @Override
+            public void onFailure(int code) {
+                // Command failed.  Check for P2P_UNSUPPORTED, ERROR, or BUSY
+            }
+        });
+        
+        mManager.discoverServices(mChannel, new ActionListener() {
+
+            @Override
+            public void onSuccess() {
+                // Success!
+            }
+
+            @Override
+            public void onFailure(int code) {
+                // Command failed.  Check for P2P_UNSUPPORTED, ERROR, or BUSY
+                
+            }
+        });
+	        
 	}
 
 }
