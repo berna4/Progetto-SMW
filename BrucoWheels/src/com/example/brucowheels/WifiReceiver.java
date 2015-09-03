@@ -43,12 +43,12 @@ public class WifiReceiver extends BroadcastReceiver {
         		System.out.println("Sto cercando");
             } else if (state == WifiP2pManager.WIFI_P2P_DISCOVERY_STOPPED) {
             	// ho smesso di cercare
-            	System.out.println("Ho smessi di cercando");
+            	System.out.println("Ho smesso di cercare");
             }
         } else if (WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION.equals(action)) { // la lista dei dispositivi è cambiata
             if (mManager != null) {
             	System.out.println("lista cambiata");
-                mManager.requestPeers(mChannel, mActivity);
+                //mManager.requestPeers(mChannel, mActivity);
             }
         } else if (WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION.equals(action)) { // lo stato della connessione è cambiato
         	// parte all'avvio dell'app, quando accetto o rifiuto una connessione, 

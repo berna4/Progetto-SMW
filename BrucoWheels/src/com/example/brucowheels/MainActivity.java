@@ -1,19 +1,19 @@
 package com.example.brucowheels;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.media.MediaPlayer;
+import android.media.MediaRecorder;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
@@ -31,20 +31,24 @@ import android.net.wifi.p2p.WifiP2pManager.PeerListListener;
 import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceInfo;
 import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceRequest;
 import android.os.Bundle;
+import android.os.Environment;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnClickListener;
+import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckedTextView;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.Toast;
 
 
-public class MainActivity extends Activity implements OnItemClickListener, PeerListListener, ConnectionInfoListener {
+public class MainActivity extends Activity implements OnItemClickListener, ConnectionInfoListener {
 
 	private final int SERVER_PORT = 8988;
 	private final HashMap<String, String> buddies = new HashMap<String, String>();
@@ -57,11 +61,15 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
     private List<WifiP2pDevice> peers = new ArrayList<WifiP2pDevice>(); // lista con i peers scoperti
     private List<WifiP2pDevice> peersConnect = new ArrayList<WifiP2pDevice>(); // lista dei peers selezionati per la connessione
     private List<String> peersName = new ArrayList<String>(); // lista con i nomi dei peers scoperti
+    private List<InetAddress> clientIp = new ArrayList<InetAddress>(); // lista con gli IP dei clienti
     private ListView list;
-    private Button bSearch;
-    private Button bConnect;
-    private Button bDisconnect;
+    private Button bSearch, bConnect, bDisconnect, bSend;
     private int nSelectedDevices = 0; // numero di peers selezionati
+    private boolean connected = false;
+    private boolean owner = false;
+    private String ownerIP;
+    private boolean mRecording = false;
+    private boolean mPlaying = false;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -81,15 +89,11 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 	    bSearch = (Button) this.findViewById(R.id.searcher);
 		bSearch.setOnClickListener(new OnClickListener() {
 			public void onClick (View v) {
-				//list.setVisibility(ListView.INVISIBLE);
-				//bConnect.setVisibility(View.INVISIBLE);
-				//bDisconnect.setVisibility(View.INVISIBLE);
 				nSelectedDevices = 0;
 				peersConnect.clear();
 				peers.clear();
 				peersName.clear();
 				list.setAdapter(new ArrayAdapter<String>(MainActivity.this, android.R.layout.simple_list_item_checked, peersName));
-				//searchDevices();	
 				discoverService();
 				list.setVisibility(ListView.VISIBLE);
 			}
@@ -114,13 +118,18 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 				list.setVisibility(View.INVISIBLE);
 			}
 		});
+		// pulsante per disconnettersi
+		bSend = (Button) this.findViewById(R.id.sender);
+		bSend.setOnClickListener(new OnClickListener() {
+			public void onClick (View v) {
+				sendData();
+			}
+		});
 		// inizializzo la lista
 		list = (ListView) this.findViewById(R.id.list);
 		list.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
 		list.setOnItemClickListener(this);
 		
-		
-		//list.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_checked, peersName));
 	}
 	
 	// registro il broadcast receiver
@@ -137,6 +146,16 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 	protected void onPause() {
 	    super.onPause();
 	    unregisterReceiver(mReceiver);
+	    
+	    if (mRecorder != null) {
+            mRecorder.release();
+            mRecorder = null;
+        }
+
+        if (mPlayer != null) {
+            mPlayer.release();
+            mPlayer = null;
+        }
 	}
 	
 	// arresta la ricerca e la visibilità del dispositivo
@@ -145,15 +164,14 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 		    super.onStop();
 		    unregisterLocalService();
 		    stopSearchServices();
-		    stopSearchDevices();
 		}
 	
 	// arresta la ricerca, la visibilità del dispositivo e uccide l'app
 	@Override
 	protected void onDestroy() {
 	    super.onDestroy();
+	    disconnectDevices();
 	    stopSearchServices();
-	    stopSearchDevices();
 	    finish();
 	}
 	
@@ -169,28 +187,7 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 			nSelectedDevices--;
 			peersConnect.remove(peers.get(position));
 		}
-		if(nSelectedDevices == 1) {
-			//bConnect.setVisibility(View.VISIBLE);
-			//bDisconnect.setVisibility(View.VISIBLE);
-		}
-		else if(nSelectedDevices == 0) {
-			//bConnect.setVisibility(View.INVISIBLE);
-			//bDisconnect.setVisibility(View.INVISIBLE);
-		}
 	}
-	
-	// metodo richiamato da mManager.requestPeers() ogni volta che il receiver cattura l'intent onPeersChanged
-    @Override
-    public void onPeersAvailable(WifiP2pDeviceList peerList) {
-
-        // elimino i vecchi peers e aggiungo i nuovi
-        /*peers.clear();
-        peers.addAll(peerList.getDeviceList());
-        if(peers.size() != 0) {
-        	getDeviceName();
-        	list.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_checked, peersName));
-        }*/
-    }
     
     // metodo richiamato da mManager.requestConnectionInfo() per distinguere tra owner e client
     @Override
@@ -198,56 +195,73 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
 
         // InetAddress from WifiP2pInfo struct.
         InetAddress groupOwnerAddress = info.groupOwnerAddress;
-
+        connected = true;
+        ownerIP = groupOwnerAddress.getHostAddress();
         // After the group negotiation, we can determine the group owner.
         if (info.groupFormed && info.isGroupOwner) {
+        	Toast.makeText(MainActivity.this, "I'm the owner!!", Toast.LENGTH_SHORT).show();
+        	owner = true;
             // Do whatever tasks are specific to the group owner.
             // One common case is creating a server thread and accepting
             // incoming connections.
-        	new Receiver(this).execute();
-        	Toast.makeText(MainActivity.this, "I'm the owner!!", Toast.LENGTH_SHORT).show();
+        	/*Intent serviceIntent = new Intent(MainActivity.this, OwnerSender.class);
+            serviceIntent.setAction(OwnerSender.ACTION_SEND);
+            serviceIntent.putExtra(OwnerSender.EXTRAS_CLIENT_ADDRESS,"192.168.49.10");
+            serviceIntent.putExtra(OwnerSender.EXTRAS_CLIENT_PORT, 8988);
+            startService(serviceIntent);*/
+        	new OwnerReceiver(this).execute(); // owner riceve dai client sulla porta 8988
         } else if (info.groupFormed) {
             // The other device acts as the client. In this case,
             // you'll want to create a client thread that connects to the group
             // owner.
-        	Intent serviceIntent = new Intent(this, Sender.class);
-            serviceIntent.setAction(Sender.ACTION_SEND);
-            serviceIntent.putExtra(Sender.EXTRAS_GROUP_OWNER_ADDRESS,groupOwnerAddress.getHostAddress());
-            serviceIntent.putExtra(Sender.EXTRAS_GROUP_OWNER_PORT, 8988);
-            startService(serviceIntent);
+        	/*Intent serviceIntent = new Intent(MainActivity.this, ClientSender.class);
+            serviceIntent.setAction(ClientSender.ACTION_SEND);
+            serviceIntent.putExtra(ClientSender.EXTRAS_GROUP_OWNER_ADDRESS,ownerIP);
+            serviceIntent.putExtra(ClientSender.EXTRAS_GROUP_OWNER_PORT, 8988);
+            startService(serviceIntent);*/
+            //new ClientReceiver(this).execute(); // i client ricevono dall'owner sula porta 8989
         	Toast.makeText(MainActivity.this, "I'm a client...", Toast.LENGTH_SHORT).show();
         	Toast.makeText(MainActivity.this, "Server IP: " + groupOwnerAddress.getHostAddress(), Toast.LENGTH_SHORT).show();
         }
     }
+    
+    public void sendData() {
+    	if(connected) {
+	    	if(owner) {
+	    		if(!mPlaying)
+	    			mPlaying = true;
+	    		else 
+	    			mPlaying = false;
+	    		onPlay(mPlaying);
+	    	}
+	    	else { // i client inviano all'owner sulla porta 8988
+	    		if(!mRecording) {
+	    			mRecording = true;
+	    			onRecord(mRecording);
+	    		}
+	    		else {
+	    			mRecording = false;
+	    			onRecord(mRecording);
+		    		Intent serviceIntent = new Intent(this, ClientSender.class);
+		            serviceIntent.setAction(ClientSender.ACTION_SEND);
+		            serviceIntent.putExtra(ClientSender.EXTRAS_GROUP_OWNER_ADDRESS, ownerIP);
+		            serviceIntent.putExtra(ClientSender.EXTRAS_GROUP_OWNER_PORT, 8988);
+		            serviceIntent.putExtra(ClientSender.AUDIO_FILE, mFileName);
+		            startService(serviceIntent);
+	    		}
+	    	}
+    	}
+    	else
+    		Toast.makeText(MainActivity.this, "Nessuna connessione!", Toast.LENGTH_SHORT).show();
+    		
+    }
 	
-    // metodo che richiama mManager.discoverPeers() per ricercare dispositivi e rendersi visibile
-	private void searchDevices() {
-		mManager.discoverPeers(mChannel, new WifiP2pManager.ActionListener() {
-		    @Override
-		    public void onSuccess() {
-		    	//Toast.makeText(MainActivity.this, "Inizio ricerca...", Toast.LENGTH_SHORT).show();
-		    }
-
-		    @Override
-		    public void onFailure(int reasonCode) {
-		    	//Toast.makeText(MainActivity.this, "Ricerca fallita!", Toast.LENGTH_SHORT).show();
-		    }
-		});
-		
-	}
-	
-	// blocca la ricerca di altri dispositivi
-	private void stopSearchDevices() {
-		mManager.stopPeerDiscovery(mChannel, new WifiP2pManager.ActionListener() {
-		    @Override
-		    public void onSuccess() {
-		    }
-
-		    @Override
-		    public void onFailure(int reasonCode) {
-		    }
-		});
-	}
+    public void connectClient(InetAddress ip) {
+    	if(!clientIp.contains(ip)) {
+    		clientIp.add(ip);
+            //Toast.makeText(MainActivity.this, "Client IP: " + ip.getHostAddress(), Toast.LENGTH_SHORT).show();
+    	}
+    }
 	
 	// blocca la ricerca di altri servizi
 	private void stopSearchServices() {
@@ -448,5 +462,71 @@ public class MainActivity extends Activity implements OnItemClickListener, PeerL
         });
 	        
 	}
+	
+	
+	private static String mFileName = null;
+
+    private MediaRecorder mRecorder = null;
+
+    private MediaPlayer   mPlayer = null;
+
+    private void onRecord(boolean start) {
+        if (start) {
+            startRecording();
+        } else {
+            stopRecording();
+        }
+    }
+
+    private void onPlay(boolean start) {
+        if (start) {
+            startPlaying();
+        } else {
+            stopPlaying();
+        }
+    }
+
+    private void startPlaying() {
+        mPlayer = new MediaPlayer();
+        try {
+            mPlayer.setDataSource(mFileName);
+            mPlayer.prepare();
+            mPlayer.start();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void stopPlaying() {
+        mPlayer.release();
+        mPlayer = null;
+    }
+
+    private void startRecording() {
+        mRecorder = new MediaRecorder();
+        mRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+        mRecorder.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP);
+        mRecorder.setOutputFile(mFileName);
+        mRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB);
+
+        try {
+            mRecorder.prepare();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        mRecorder.start();
+    }
+
+    private void stopRecording() {
+        mRecorder.stop();
+        mRecorder.release();
+        mRecorder = null;
+    }
+
+    public MainActivity() {
+        mFileName = Environment.getExternalStorageDirectory().getAbsolutePath();
+        mFileName += "/audiorecordtest.3gp";
+    }
 
 }
